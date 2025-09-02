@@ -21,7 +21,8 @@ export interface TunnelResponseMsg {
 }
 
 export interface ClientConfig {
-  serverWsUrl: string; // ws://host:port
+  serverWsUrl?: string; // legacy single URL
+  serverWsUrls?: string[]; // preferred: candidates in priority order (e.g., wss then ws)
   subdomain: string;
   token?: string;
   to: string; // http://localhost:3000
@@ -73,17 +74,44 @@ function forwardRequest(toUrl: string, reqMsg: TunnelRequestMsg): Promise<Tunnel
 }
 
 export function startClient(cfg: ClientConfig) {
-  const url = new URL(cfg.serverWsUrl);
-  url.searchParams.set('subdomain', cfg.subdomain);
-  if (cfg.token) url.searchParams.set('token', cfg.token);
+  const candidates: string[] = (cfg.serverWsUrls && cfg.serverWsUrls.length)
+    ? cfg.serverWsUrls
+    : (cfg.serverWsUrl ? [cfg.serverWsUrl] : []);
+
+  if (!candidates.length) {
+    console.error('[client] No server WebSocket URL provided.');
+    process.exit(1);
+  }
+
+  const buildUrl = (base: string) => {
+    const u = new URL(base);
+    u.searchParams.set('subdomain', cfg.subdomain);
+    if (cfg.token) u.searchParams.set('token', cfg.token);
+    return u;
+  };
 
   let ws: WebSocket | null = null;
+  let currentIndex = 0;
+  let connectedUrl: URL | null = null;
 
-  const connect = () => {
-    ws = new WebSocket(url.toString());
+  const tryNext = () => {
+    if (currentIndex >= candidates.length) {
+      console.error('[client] Failed to connect to any server URL. Tried:', candidates.join(', '));
+      process.exit(2);
+    }
+    const u = buildUrl(candidates[currentIndex]);
+    console.log(`[client] Connecting: ${u.toString()}`);
+    ws = new WebSocket(u.toString());
 
     ws.on('open', () => {
-      console.log(`[client] Connected to server as subdomain="${cfg.subdomain}"`);
+      connectedUrl = u;
+      const usingWss = u.protocol === 'wss:';
+      const toProto = new URL(cfg.to).protocol.replace(':', '');
+      console.log(`[client] Connected (${usingWss ? 'secure wss' : 'ws'}) as subdomain="${cfg.subdomain}"`);
+      console.log(`[client] Local target tunneled: ${cfg.to} (${toProto})`);
+      const publicScheme = usingWss ? 'https' : 'http';
+      const publicBase = `${publicScheme}://${u.hostname}/t/${cfg.subdomain}`;
+      console.log(`[client] Public base URL: ${publicBase}/...`);
     });
 
     ws.on('message', async (message: WebSocket.RawData) => {
@@ -112,8 +140,18 @@ export function startClient(cfg: ClientConfig) {
         console.error('[client] Authentication failed. Check your token.');
         process.exit(4);
       }
+      if (!connectedUrl && currentIndex < candidates.length - 1) {
+        // Try fallback candidate immediately (e.g., ws after wss)
+        currentIndex += 1;
+        console.log(`[client] Falling back to next server URL...`);
+        tryNext();
+        return;
+      }
       console.log('[client] Disconnected. Reconnecting in 2s...');
-      setTimeout(connect, 2000);
+      setTimeout(() => {
+        connectedUrl = null;
+        tryNext();
+      }, 2000);
     });
 
     ws.on('error', (err) => {
@@ -130,5 +168,5 @@ export function startClient(cfg: ClientConfig) {
     }, 30000);
   };
 
-  connect();
+  tryNext();
 }

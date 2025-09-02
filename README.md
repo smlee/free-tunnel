@@ -3,9 +3,9 @@
 Reverse-tunnel client that connects to a `free-tunnel-server` over WebSocket and forwards incoming HTTP traffic to a local target URL. Free ngrok alternative and free tunnel solution for exposing localhost with subdomain routing.
 
 - CLI name: `free-tunnel`
-- Connects to server `--server-ws-url` (default ws://localhost:8081)
-- Registers `--subdomain` on the server
-- Forwards to local target via `--to` or `--to-host/--to-port/--to-proto`
+- Connects to server using a public host or full ws(s) URL (prefers WSS, falls back to WS)
+- Infers subdomain from the server host's first label (e.g., `myapp.example.com` → `myapp`)
+- Forwards to a local target either via positional `host:port` or `--to`/`--to-*`
 - Auth token required via `--token` (use the token configured or printed by the server)
 
 > This client works hand-in-hand with the server package `@smlee/free-tunnel-server`.
@@ -19,41 +19,73 @@ Install globally, then connect your local app to a deployed server.
 ```
 npm i -g @smlee/free-tunnel
 
-# Example: public host is https://tunnel.example.com, subdomain is "tunnel",
-# server proxies WS at /ws to the server's WS port, and HTTP to /t/tunnel/*.
-free-tunnel --server-ws-url wss://tunnel.example.com/ws \
-  --subdomain tunnel \
-  --token <STRONG_TOKEN> \
-  --to http://localhost:3000
+# Simple usage (clean and minimal):
+#   <server> must be your subdomain host, e.g., myapp.example.com
+#   [to] is your local target as host:port; scheme defaults to http
+free-tunnel myapp.example.com localhost:3000 --token <TOKEN>
 
-# Now browse your public URL
-#   https://tunnel.example.com/
+# Or provide full WS URL explicitly (client still infers subdomain):
+free-tunnel wss://myapp.example.com/ws 3000 --token <TOKEN>
+
+# Or use --to for a full local URL
+free-tunnel myapp.example.com --token <TOKEN> --to https://localhost:8443
+
+# The client will prefer secure (wss/https) if available, and fall back to ws/http.
 ```
 
-Note: The server requires a token. If the server started without `--auth-token`, it prints a generated token like:
+Notes:
+- The server requires a token. If the server started without `--auth-token`, it prints a generated token like:
 
 ```
 [server] Generated auth token: <token>
 ```
-Copy that value for `--token`.
+  Copy that value for `--token`.
+- The `<server>` positional accepts either a host (e.g., `myapp.example.com`) or a full `ws(s)://` URL. With a host, the client tries `wss://<host>/ws` then `ws://<host>/ws`.
+- Subdomain is inferred from the first host label. Use a subdomain host (e.g., `myapp.example.com`), not an apex.
+
+### Clean root (no /t/<subdomain>)
+
+If you want your public base to be exactly `https://myapp.example.com/` (no `/t/myapp` path), add a small rewrite in your reverse proxy (no server code changes needed). Example Nginx:
+
+```nginx
+server {
+  listen 443 ssl http2;
+  server_name myapp.example.com;
+
+  # WS control
+  location = /ws {
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_pass http://127.0.0.1:8081;
+  }
+
+  # Clean root → path-based tunnel /t/myapp/*
+  location / {
+    proxy_http_version 1.1;
+    rewrite ^/(.*)$ /t/myapp/$1 break;
+    proxy_pass http://127.0.0.1:8080;
+  }
+}
+```
+
+For wildcard domains, use a map or rewrite to extract the first host label and proxy to `/t/<label>/*`.
 
 ## Install & Run (local)
 
 ```
 npm install
 npm run build
-# Option A: Provide full WS URL
-npm start -- --server-ws-url ws://localhost:8081 --subdomain myapp --token change-me-strong-token --to http://localhost:3000
+# Provide your own token or let the server generate one
 
-# Option B: Provide host and port (client builds ws://<host>:<port>)
-npm start -- --host localhost --ws-port 8081 --subdomain myapp --token change-me-strong-token --to http://localhost:3000
+# Option A: Provide public host (prefers wss)
+npm start -- myapp.example.com localhost:3000 --token change-me-strong-token
 
-# Local target options
-# A) Full URL
-npm start -- --server-ws-url ws://localhost:8081 --subdomain myapp --to https://dev.box:8443
+# Option B: Provide full WS URL explicitly
+npm start -- wss://myapp.example.com/ws 3000 --token change-me-strong-token
 
-# B) Build from parts
-npm start -- --server-ws-url ws://localhost:8081 --subdomain myapp --to-host dev.box --to-port 8443 --to-proto https
+# Local target variations
+npm start -- myapp.example.com --token change-me-strong-token --to https://localhost:8443
 ```
 
 Pair with server:
@@ -70,17 +102,20 @@ curl -i http://localhost:8080/t/myapp/
 ```
 free-tunnel --help
 
+Usage: free-tunnel <server> [to] [options]
+
+Arguments:
+  server                    Public tunnel host (subdomain.domain) or ws(s) URL
+  to                        Local target as host:port (scheme defaults to http)
+
 Options:
-  -s, --server-ws-url <url>  WebSocket server URL (overrides --host/--ws-port)
-  -H, --host <host>          Server hostname (default: "localhost")
-  -W, --ws-port <port>       Server WebSocket port (default: "8081")
-  -d, --subdomain <name>     Requested subdomain (required)
-  -t, --token <token>        Auth token (required; obtain from server)
-  -T, --to <url>             Local target URL (overrides --to-host/--to-port/--to-proto)
-      --to-host <host>       Local target hostname (default: "localhost")
-      --to-port <port>       Local target port (default: "3000")
-      --to-proto <proto>     Local target protocol (http|https) (default: "http")
-  -h, --help                 display help for command
+  -s, --server-ws-url <u>   WebSocket server URL (overrides host-based inference)
+  -t, --token <token>       Auth token (required; obtain from server)
+  -T, --to <url>            Local target URL (overrides [to] and --to-*)
+      --to-host <host>      Local target hostname (default: "localhost")
+      --to-port <port>      Local target port (default: "3000")
+      --to-proto <proto>    Local target protocol (http|https) (default: "http")
+  -h, --help                display help for command
 ```
 
 ## Environment Example
