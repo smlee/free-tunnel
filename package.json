@@ -1,0 +1,37 @@
+{
+  "name": "@smlee/free-tunnel",
+  "version": "0.1.0",
+  "type": "commonjs",
+  "main": "dist/client.js",
+  "types": "dist/client.d.ts",
+  "bin": {
+    "free-tunnel": "dist/cli.js"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "build": "tsc -b",
+    "start": "node dist/cli.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/cli.ts",
+    "prepublishOnly": "npm run clean && npm run build",
+    "publish:public": "npm publish --access public",
+    "release": "npm run clean && npm run build && npm run publish:public"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "dependencies": {
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "ws": "^8.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/ws": "^8.5.10",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.4.5"
+  }
+}
