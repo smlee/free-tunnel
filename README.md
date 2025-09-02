@@ -1,6 +1,6 @@
 # @smlee/free-tunnel
 
-Reverse-tunnel client that connects to a `free-tunnel-server` over WebSocket and forwards incoming HTTP traffic to a local target URL.
+Reverse-tunnel client that connects to a `free-tunnel-server` over WebSocket and forwards incoming HTTP traffic to a local target URL. Free ngrok alternative and free tunnel solution for exposing localhost with subdomain routing.
 
 - CLI name: `free-tunnel`
 - Connects to server `--server-ws-url` (default ws://localhost:8081)
