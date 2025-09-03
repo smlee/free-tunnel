@@ -110,8 +110,10 @@ export function startClient(cfg: ClientConfig) {
       console.log(`[client] Connected (${usingWss ? 'secure wss' : 'ws'}) as subdomain="${cfg.subdomain}"`);
       console.log(`[client] Local target tunneled: ${cfg.to} (${toProto})`);
       const publicScheme = usingWss ? 'https' : 'http';
-      const publicBase = `${publicScheme}://${u.hostname}/t/${cfg.subdomain}`;
-      console.log(`[client] Public base URL: ${publicBase}/...`);
+      const cleanRoot = `${publicScheme}://${u.hostname}`;
+      const pathBased = `${publicScheme}://${u.hostname}/t/${cfg.subdomain}`;
+      console.log(`[client] Public URL (clean root, if your proxy maps / -> /t/${cfg.subdomain}/): ${cleanRoot}/`);
+      console.log(`[client] Public URL (path-based fallback): ${pathBased}/`);
     });
 
     ws.on('message', async (message: WebSocket.RawData) => {
